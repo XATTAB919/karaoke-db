@@ -18,6 +18,12 @@ DB_USER = "karaoke_h7ks_user"
 DB_PASS = "KHWlivhitgGDwPjptwwQuMJzYXEuB9ZI"
 DB_PORT = 5432
 
+### проверка сервера
+@app.route('/')
+def home():
+    return "Сервер работает!"
+
+
 # --- Функция для подключения к базе данных ---
 def get_connection():
     return psycopg2.connect(
