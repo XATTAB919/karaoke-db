@@ -11,6 +11,15 @@ import os                                     # Для работы с путя�
 app = Flask(__name__)
 CORS(app)  # Разрешаем CORS для запросов с других источников
 
+
+db_config = {
+    "host": "dpg-d1f729ali9vc739mck2g-a",
+    "database": "karaoke_h7ks",
+    "user": "karaoke_h7ks_user",
+    "password": "KHWlivhitgGDwPjptwwQuMJzYXEuB9ZI",
+    "port": 5432
+}
+
 # --- Данные для подключения к PostgreSQL (твоя база на Render) ---
 DB_HOST = "dpg-d1f729ali9vc739mck2g-a"
 DB_NAME = "karaoke_h7ks"
@@ -138,6 +147,29 @@ def status():
                 "name": user[0],
                 "pro_expires": user[1].isoformat()
             })
+
+
+# --- Получение всех пользователей ---
+@app.route("/users", methods=["GET"])  # создаём маршрут /users для GET-запроса
+def get_all_users():
+    try:
+        with get_connection() as conn:  # подключаемся к базе
+            with conn.cursor() as cur:  # создаём курсор для выполнения SQL-запросов
+                cur.execute("SELECT id, name, email, pro_expires FROM users")  # получаем всех пользователей
+                rows = cur.fetchall()  # забираем все строки из результата
+
+                users = []  # создаём список для хранения пользователей
+                for row in rows:  # проходим по каждой строке
+                    users.append({
+                        "id": row[0],  # id из таблицы
+                        "name": row[1],  # имя пользователя
+                        "email": row[2],  # email пользователя
+                        "pro_expires": row[3].isoformat() if row[3] else None  # срок действия PRO, если есть
+                    })
+
+                return jsonify(users)  # возвращаем всех пользователей как JSON
+    except Exception as e:  # если произошла ошибка
+        return jsonify({"error": str(e)}), 500  # возвращаем ошибку в формате JSON
 
 # --- Запуск приложения ---
 if __name__ == '__main__':

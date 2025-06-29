@@ -23,6 +23,9 @@ from kivy.uix.screenmanager import ScreenManager, NoTransition, Screen
 from utils.font_size import *
 from utils.size_image import *
 import json
+from kivy.uix.textinput import TextInput                     # TextInput — поле для ввода текста (например, имя, email, пароль)
+from kivy.uix.popup import Popup                             # Popup — всплывающее окно (для показа ошибок и уведомлений)
+import requests                                               # библиотека для отправки HTTP-запросов (мы её используем для регистрации на сервере)
 
 
 # === Путь к файлу с настройками ===
@@ -455,7 +458,124 @@ class LicenseScreen(Screen):
         app = App.get_running_app()
         app.settings["license_accepted"] = True
         save_settings(app.settings)  # сохраняем файл
-        self.manager.current = 'main'
+        self.manager.current = 'register'
+
+
+class RegisterScreen(Screen):                                # создаём новый экран (страницу) приложения — экран регистрации
+    def __init__(self, **kwargs):                            # метод инициализации (вызывается при создании экрана)
+        super().__init__(**kwargs)                           # передаём все параметры родительскому классу Screen
+
+        # 🎨 Устанавливаем фон экрана (то же самое, что и на других экранах)
+        with self.canvas.before:
+            self.bg_texture = CoreImage('Pictures/background.jpeg').texture   # загружаем текстуру из файла
+            self.rect = Rectangle(texture=self.bg_texture, size=self.size, pos=self.pos)  # создаём прямоугольник с фоном
+        self.bind(
+            size=lambda *args: update_background(self),     # если размер экрана изменится — обновим фон
+            pos=lambda *args: update_background(self)       # если положение экрана изменится — тоже обновим фон
+        )
+
+        # Главный layout — свободное размещение
+        self.layout = FloatLayout()                          # создаём корневой контейнер (всё добавляется в него)
+        self.add_widget(self.layout)                         # добавляем layout на экран
+
+        # 📦 Внутренний контейнер с закруглённым полупрозрачным фоном
+        self.screen_box = BoxLayout(
+            orientation='vertical',                          # вертикальное размещение элементов
+            size_hint=(0.8, 0.8),                            # размер 80% от ширины и высоты экрана
+            pos_hint={'center_x': 0.5, 'center_y': 0.55},    # расположение по центру экрана
+            padding=10, spacing=35                           # внутренние отступы и расстояние между элементами
+        )
+        with self.screen_box.canvas.before:
+            Color(0.87, 0.87, 0.87, 0.7)                     # цвет полупрозрачный серый
+            self.overlay_rect = RoundedRectangle(            # рисуем закруглённый прямоугольник
+                size=(0, 0), pos=(0, 0), radius=[30]
+            )
+        self.screen_box.bind(
+            size=lambda *args: update_overlay(self),         # если размер меняется — обновим фон
+            pos=lambda *args: update_overlay(self)
+        )
+        self.layout.add_widget(self.screen_box)              # добавляем screen_box внутрь layout
+
+        # === Поля для ввода ===
+
+        self.name_input = TextInput(                         # создаём поле для ввода имени
+            hint_text="Имя",                                 # подсказка внутри поля
+            multiline=False,                                 # только одна строка
+            size_hint=(1, 0.1)                                # 100% ширины контейнера, 10% высоты
+        )
+
+        self.email_input = TextInput(                        # создаём поле для email
+            hint_text="Email",
+            multiline=False,
+            size_hint=(1, 0.1)
+        )
+
+        self.password_input = TextInput(                     # создаём поле для пароля
+            hint_text="Пароль",
+            multiline=False,
+            password=True,                                   # скрываем вводимые символы
+            size_hint=(1, 0.1)
+        )
+
+        self.screen_box.add_widget(self.name_input)          # добавляем поле ввода имени
+        self.screen_box.add_widget(self.email_input)         # добавляем поле ввода email
+        self.screen_box.add_widget(self.password_input)      # добавляем поле ввода пароля
+
+        # === Кнопка регистрации ===
+        self.register_button = Button(
+            text="Зарегистрироваться",                        # текст на кнопке
+            size_hint=(1, 0.12)                               # 100% ширины, 12% высоты от контейнера
+        )
+        self.register_button.bind(on_press=self.register_user)  # при нажатии вызвать метод register_user
+        self.screen_box.add_widget(self.register_button)        # добавляем кнопку в контейнер
+
+    def register_user(self, instance):                       # метод, вызываемый при нажатии на кнопку регистрации
+        name = self.name_input.text.strip()                  # получаем введённое имя, убираем пробелы по краям
+        email = self.email_input.text.strip()                # получаем введённый email
+        password = self.password_input.text.strip()          # получаем введённый пароль
+
+        if not all([name, email, password]):                 # проверка: если какое-либо поле пустое
+            self.show_popup("Ошибка", "Пожалуйста, заполните все поля.")  # показываем всплывающее окно
+            return                                           # прерываем выполнение метода
+
+        # === Отправляем POST-запрос на сервер ===
+        try:
+            response = requests.post("http://localhost:10000/register", json={  # отправляем JSON-запрос
+                "name": name,                          # имя, введённое пользователем
+                "email": email,                        # email, введённый пользователем
+                "password": password                   # пароль, введённый пользователем
+            })
+
+            if response.status_code == 201:            # если регистрация прошла успешно
+                data = response.json()                 # преобразуем ответ сервера в словарь
+
+                # сохраняем данные в settings.json
+                app = App.get_running_app()                            # получаем экземпляр приложения
+                app.settings["token"] = data["token"]                  # сохраняем токен
+                app.settings["pro_expires"] = data["pro_expires"]      # сохраняем дату окончания PRO
+                app.settings["user_name"] = data["name"]               # сохраняем имя пользователя
+                save_settings(app.settings)                            # записываем файл
+
+                self.show_popup("Успешно", "Регистрация прошла успешно!")  # всплывающее уведомление
+                self.manager.current = "tutorial"                       # переход на экран подсказок
+
+            elif response.status_code == 409:        # если email уже зарегистрирован
+                self.show_popup("Ошибка", "Email уже зарегистрирован.")
+
+            else:                                    # другая ошибка
+                self.show_popup("Ошибка", "Не удалось зарегистрироваться.")
+
+        except Exception as e:                       # если ошибка подключения к серверу
+            self.show_popup("Сервер", f"Ошибка подключения:\n{str(e)}")
+
+    def show_popup(self, title, message):            # метод для отображения всплывающего окна
+        popup = Popup(
+            title=title,                             # заголовок окна
+            content=Label(text=message),             # содержимое — обычная метка с текстом
+            size_hint=(0.8, 0.4),                    # размеры окна (80% ширины и 40% высоты экрана)
+            auto_dismiss=True                        # закрывается автоматически по клику
+        )
+        popup.open()                                 # открыть окно
 
 
 class MainScreen(Screen):
@@ -478,6 +598,7 @@ class KaraokeApp(App):
         self.sm.add_widget(LoadScreen(name="load"))
         self.sm.add_widget(LanguageScreen(name='Language'))
         self.sm.add_widget(LicenseScreen(name='license'))
+        self.sm.add_widget(RegisterScreen(name='register'))
         self.sm.add_widget(MainScreen(name='main'))
 
         self.sm.current = "load"  # 💥 ВСЕГДА запускаем с экрана загрузки
